@@ -110,27 +110,40 @@ def _pca_box(cam_pts: np.ndarray, cls: str) -> tuple:
         center = cam_pts.mean(axis=0) if len(cam_pts) else np.array([0.0, 1.0, 10.0])
         return center, np.array([prior_w, prior_h, prior_l]), 0.0
 
-    # Depth (Z) — use median; robust to outliers at cluster edges
-    median_z  = float(np.median(cam_pts[:, 2]))
-    center_xz = cam_pts.mean(axis=0)
-    center    = np.array([center_xz[0], center_xz[1], median_z])
+    # Depth (Z) — median of cluster; robust to outliers at frustum edges
+    median_z = float(np.median(cam_pts[:, 2]))
 
-    # Height: cluster Y-extent blended with prior (more reliable than L/W)
-    raw_h = float(cam_pts[:, 1].max() - cam_pts[:, 1].min())
-    alpha = float(np.clip((len(cam_pts) - 3) / 27.0, 0.0, 1.0))
+    # Lateral center (X) — mean is fine; limited spread along X in frustum
+    center_x = float(cam_pts[:, 0].mean())
+
+    # Vertical center (Y, camera-down):
+    #   LiDAR mostly illuminates the object's top surface (roof, bonnet).
+    #   min(Y) ≈ top surface in camera frame; add h/2 to reach box center.
+    top_y  = float(cam_pts[:, 1].min())
+    raw_h  = float(cam_pts[:, 1].max() - cam_pts[:, 1].min())
+    alpha  = float(np.clip((len(cam_pts) - 3) / 27.0, 0.0, 1.0))
     height = (alpha * raw_h + (1 - alpha) * prior_h) if raw_h > 0.15 else prior_h
+    center_y = top_y + height / 2.0
 
-    # Yaw: PCA on horizontal footprint
-    xz      = cam_pts[:, [0, 2]]
+    center = np.array([center_x, center_y, median_z])
+
+    # Yaw: PCA on horizontal (XZ) footprint, then SNAP to nearest 90°.
+    #
+    # Raw PCA yaw is unreliable because frustum depth range always adds a
+    # Z-elongation bias to the cluster, pulling the principal axis toward Z
+    # regardless of the true object heading. Snapping to {0, ±π/2, π} gives
+    # the four physically meaningful headings for street traffic (toward cam,
+    # away, left-side-on, right-side-on) and eliminates diagonal artefacts.
+    xz       = cam_pts[:, [0, 2]]
     centered = xz - xz.mean(axis=0)
     cov      = centered.T @ centered / max(len(centered) - 1, 1)
     eigenvalues, eigenvectors = np.linalg.eigh(cov)
     main_axis = eigenvectors[:, np.argmax(eigenvalues)]
-    yaw = float(-np.arctan2(main_axis[0], main_axis[1]))
+    raw_yaw   = float(-np.arctan2(main_axis[0], main_axis[1]))
+    # Snap to nearest multiple of π/2
+    yaw = float(np.round(raw_yaw / (np.pi / 2)) * (np.pi / 2))
 
-    # L and W always from class prior — cluster extents are unreliable in
-    # frustum-based cropping because the frustum depth range inflates the
-    # principal-axis extent by the full object-to-background span.
+    # L and W always from class prior — frustum crops inflate extents
     return center, np.array([prior_w, height, prior_l]), yaw
 
 
