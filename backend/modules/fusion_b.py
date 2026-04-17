@@ -101,17 +101,18 @@ def _dbscan_depth_seeded(points: np.ndarray, target_x: float) -> np.ndarray:
 
 def _pca_box(cam_pts: np.ndarray, cls: str) -> tuple:
     """
-    Estimate oriented 3D box from camera-frame LiDAR cluster.
+    Fit a tight oriented 3D bounding box (OBB) to a camera-frame LiDAR cluster.
 
-    Strategy:
-      - Center Z (depth) from cluster median — most accurate LiDAR quantity
-      - Center X, Y from cluster mean
-      - L and W from KITTI class priors — frustum crops are unreliable for
-        estimating length/width because they always span the full object depth
-      - H blended: cluster vertical extent + prior (height is observable)
-      - Yaw from PCA of horizontal footprint
-
-    Returns (center [3], dims [w, h, l], yaw_rad).
+    Dimension strategy:
+      - Z (depth): median of cluster — most accurate LiDAR quantity
+      - X (lateral): mean — limited spread inside frustum
+      - Y (vertical): min(cluster Y) + H/2 — LiDAR hits top surfaces; shift down
+      - H: cluster vertical extent blended with class prior
+      - W, L: PCA principal-axis extents — actual measured size from cluster.
+              Floor-clamped to 50% of class prior so a single-face crop (e.g.
+              head-on car where only the front face is lit) can't collapse to zero.
+      - Yaw: raw PCA angle of the major horizontal axis — no 90° snap.
+             The snap was cosmetically clean but wrong for diagonal/merging objects.
     """
     prior_w, prior_h, prior_l = _DIM_PRIORS.get(cls.lower(), _DEFAULT_DIMS)
 
@@ -119,15 +120,11 @@ def _pca_box(cam_pts: np.ndarray, cls: str) -> tuple:
         center = cam_pts.mean(axis=0) if len(cam_pts) else np.array([0.0, 1.0, 10.0])
         return center, np.array([prior_w, prior_h, prior_l]), 0.0
 
-    # Depth (Z) — median of cluster; robust to outliers at frustum edges
+    # ── Depth (Z) ────────────────────────────────────────────────────────────
     median_z = float(np.median(cam_pts[:, 2]))
-
-    # Lateral center (X) — mean is fine; limited spread along X in frustum
     center_x = float(cam_pts[:, 0].mean())
 
-    # Vertical center (Y, camera-down):
-    #   LiDAR mostly illuminates the object's top surface (roof, bonnet).
-    #   min(Y) ≈ top surface in camera frame; add h/2 to reach box center.
+    # ── Height (Y, camera-down) ───────────────────────────────────────────────
     top_y  = float(cam_pts[:, 1].min())
     raw_h  = float(cam_pts[:, 1].max() - cam_pts[:, 1].min())
     alpha  = float(np.clip((len(cam_pts) - 3) / 27.0, 0.0, 1.0))
@@ -136,24 +133,32 @@ def _pca_box(cam_pts: np.ndarray, cls: str) -> tuple:
 
     center = np.array([center_x, center_y, median_z])
 
-    # Yaw: PCA on horizontal (XZ) footprint, then SNAP to nearest 90°.
-    #
-    # Raw PCA yaw is unreliable because frustum depth range always adds a
-    # Z-elongation bias to the cluster, pulling the principal axis toward Z
-    # regardless of the true object heading. Snapping to {0, ±π/2, π} gives
-    # the four physically meaningful headings for street traffic (toward cam,
-    # away, left-side-on, right-side-on) and eliminates diagonal artefacts.
+    # ── Oriented footprint (XZ plane) via PCA ────────────────────────────────
     xz       = cam_pts[:, [0, 2]]
     centered = xz - xz.mean(axis=0)
     cov      = centered.T @ centered / max(len(centered) - 1, 1)
     eigenvalues, eigenvectors = np.linalg.eigh(cov)
-    main_axis = eigenvectors[:, np.argmax(eigenvalues)]
-    raw_yaw   = float(-np.arctan2(main_axis[0], main_axis[1]))
-    # Snap to nearest multiple of π/2
-    yaw = float(np.round(raw_yaw / (np.pi / 2)) * (np.pi / 2))
 
-    # L and W always from class prior — frustum crops inflate extents
-    return center, np.array([prior_w, height, prior_l]), yaw
+    # Major axis = length direction; minor axis = width direction
+    major_idx  = np.argmax(eigenvalues)
+    minor_idx  = 1 - major_idx
+    main_axis  = eigenvectors[:, major_idx]
+    minor_axis = eigenvectors[:, minor_idx]
+
+    # Project cluster onto each axis → measure actual extents
+    proj_l = centered @ main_axis
+    proj_w = centered @ minor_axis
+    meas_l = float(proj_l.max() - proj_l.min())
+    meas_w = float(proj_w.max() - proj_w.min())
+
+    # Floor at 50% of class prior — single visible face gives underestimate
+    length = max(meas_l, prior_l * 0.50)
+    width  = max(meas_w, prior_w * 0.50)
+
+    # Raw PCA yaw — accurate for diagonal / lane-changing objects
+    yaw = float(-np.arctan2(main_axis[0], main_axis[1]))
+
+    return center, np.array([width, height, length]), yaw
 
 
 def fuse_b(

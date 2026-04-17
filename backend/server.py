@@ -14,7 +14,7 @@ from modules.calibration import parse_calib
 from modules.detector import detect
 from modules.fusion import fuse
 from modules.fusion_b import fuse_b
-from modules.visualizer import annotate_image, generate_bev, bbox_to_frustum_corners
+from modules.visualizer import annotate_image, generate_bev, project_box3d, box3d_corners_cam, bbox_to_frustum_corners
 from modules.synthetic import generate_synthetic_scene, get_synthetic_detections
 from modules.label_parser import parse_label_file
 from modules.metrics import match_and_evaluate
@@ -66,12 +66,21 @@ async def infer(
     # Annotate each detection with projected 2D corners for frontend 3D rendering
     P2 = calib_parsed.get("P2")
     for det in detections:
-        if P2 is not None and det.get("box_3d") and det.get("bbox_2d"):
+        corners_2d = None
+        if P2 is not None and det.get("box_3d"):
+            pts = project_box3d(det["box_3d"], P2)
+            if pts is not None:
+                # Reorder: near face (indices 4-7) first, far face (0-3) second
+                # so corners_2d[0-3] = near face, corners_2d[4-7] = far face
+                # matching the FRONT/BACK_EDGES convention in the frontend.
+                near = pts[4:8].tolist()
+                far  = pts[0:4].tolist()
+                corners_2d = near + far
+        if corners_2d is None and P2 is not None and det.get("box_3d") and det.get("bbox_2d"):
+            # Frustum fallback (degenerate projection)
             length = float(det["box_3d"][5]) if det["box_3d"][5] > 0.1 else 4.0
-            det["corners_2d"] = bbox_to_frustum_corners(
-                det["bbox_2d"], det["distance_m"], length, P2)
-        else:
-            det["corners_2d"] = None
+            corners_2d = bbox_to_frustum_corners(det["bbox_2d"], det["distance_m"], length, P2)
+        det["corners_2d"] = corners_2d
 
     # If GT labels provided, compute metrics against predictions
     ground_truth = None
@@ -144,12 +153,17 @@ async def infer_scene(scene_id: str):
     detections = fuse_b(detections_2d, scene["points"], calib_parsed, scene["image"].shape[:2])
     P2 = calib_parsed.get("P2")
     for det in detections:
-        if P2 is not None and det.get("box_3d") and det.get("bbox_2d"):
+        corners_2d = None
+        if P2 is not None and det.get("box_3d"):
+            pts = project_box3d(det["box_3d"], P2)
+            if pts is not None:
+                near = pts[4:8].tolist()
+                far  = pts[0:4].tolist()
+                corners_2d = near + far
+        if corners_2d is None and P2 is not None and det.get("box_3d") and det.get("bbox_2d"):
             length = float(det["box_3d"][5]) if det["box_3d"][5] > 0.1 else 4.0
-            det["corners_2d"] = bbox_to_frustum_corners(
-                det["bbox_2d"], det["distance_m"], length, P2)
-        else:
-            det["corners_2d"] = None
+            corners_2d = bbox_to_frustum_corners(det["bbox_2d"], det["distance_m"], length, P2)
+        det["corners_2d"] = corners_2d
     annotated = annotate_image(scene["image"], detections, calib_parsed)
     bev = generate_bev(scene["points"], detections)
 

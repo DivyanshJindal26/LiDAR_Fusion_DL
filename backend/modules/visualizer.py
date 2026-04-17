@@ -191,12 +191,31 @@ def annotate_image(image: np.ndarray, detections: list[dict], calib: dict,
         box3d  = det.get("box_3d")
         bbox2d = det.get("bbox_2d")
 
-        if P2 is not None and box3d and bbox2d:
+        corners_uv = None
+        if P2 is not None and box3d:
+            # Project the actual OBB through the calibration matrix — this is
+            # the true 3D box the system estimated, not a visual approximation.
+            # Reorder so corners 0-3 are the near face (closer to camera, -hl)
+            # and 4-7 are the far face (+hl), matching FRONT/BACK_EDGES.
+            pts = project_box3d(box3d, P2)
+            if pts is not None:
+                # box3d_corners_cam gives 0-3 at +hl (far), 4-7 at -hl (near).
+                # Swap so 0-3 = near face (visible/closer), 4-7 = far face.
+                near = pts[4:8].tolist()   # indices 4-7 → near face
+                far  = pts[0:4].tolist()   # indices 0-3 → far face
+                corners_uv = near + far
+
+        if corners_uv is not None:
+            _draw_box3d_pil(draw, corners_uv, color, front_w=3, back_w=1)
+            lx = int(min(c[0] for c in corners_uv[:4]))
+            ly = int(min(c[1] for c in corners_uv[:4])) - 18
+        elif P2 is not None and box3d and bbox2d:
+            # Fallback: frustum extrusion when projection fails (behind camera etc.)
             length  = float(box3d[5]) if box3d[5] > 0.1 else 4.0
-            corners = bbox_to_frustum_corners(bbox2d, dist, length, P2)
-            _draw_box3d_pil(draw, corners, color, front_w=3, back_w=1)
-            lx = int(min(c[0] for c in corners[:4]))
-            ly = int(min(c[1] for c in corners[:4])) - 18
+            corners_uv = bbox_to_frustum_corners(bbox2d, dist, length, P2)
+            _draw_box3d_pil(draw, corners_uv, color, front_w=3, back_w=1)
+            lx = int(min(c[0] for c in corners_uv[:4]))
+            ly = int(min(c[1] for c in corners_uv[:4])) - 18
         elif bbox2d:
             x1, y1, x2, y2 = bbox2d
             draw.rectangle([x1, y1, x2, y2], outline=color, width=2)
