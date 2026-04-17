@@ -187,12 +187,11 @@ def fuse_b(
         cls = det["class"]
         prior_w, prior_h, prior_l = _DIM_PRIORS.get(cls.lower(), _DEFAULT_DIMS)
 
-        # Apparent-size depth seed: fy * class_height / bbox_height_px
-        # Used to pick the right DBSCAN cluster when the frustum contains
-        # foreground clutter at a different depth than the actual target.
-        # Camera Z ≈ LiDAR X for forward-facing objects, so we use this
-        # as the LiDAR-frame forward-distance seed.
-        z_apparent = fy * prior_h / bbox_h
+        # Apparent-size depth seed: fy * height / bbox_height_px
+        # Universal height constant avoids wrong seeds when the detected class
+        # doesn't match the actual object (e.g. YOLO says Truck but GT is Misc).
+        # 1.65m ≈ average of all KITTI road objects (cars, pedestrians, cyclists, vans).
+        z_apparent = fy * 1.65 / bbox_h
 
         # Step 2: frustum crop
         cluster_lidar = _frustum_crop(projected, points_clean, det["bbox_2d"])
