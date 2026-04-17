@@ -2,8 +2,10 @@
 FastAPI server for LiDAR + Camera Fusion demo.
 Exposes /infer, /scenes, /query, and /chat endpoints.
 """
+import io
 import os
 import time
+import zipfile
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -18,6 +20,7 @@ from modules.visualizer import annotate_image, generate_bev, project_box3d, box3
 from modules.synthetic import generate_synthetic_scene, get_synthetic_detections
 from modules.label_parser import parse_label_file
 from modules.metrics import match_and_evaluate
+from modules.bulk import process_zip
 
 app = FastAPI(title="LiDAR Fusion API", version="0.1.0")
 
@@ -174,6 +177,32 @@ async def infer_scene(scene_id: str):
         "inference_time_ms": round((time.perf_counter() - t0) * 1000, 1),
         "num_points":        len(scene["points"]),
     }
+
+
+# ── Bulk dataset inference ────────────────────────────────────────────────────
+
+@app.post("/infer-bulk")
+async def infer_bulk(
+    zip_file: UploadFile = File(...),
+    max_frames: int = 20,
+):
+    """
+    Process an entire KITTI dataset ZIP in one shot.
+
+    Accepts a ZIP containing either:
+      - Object-detection format: velodyne/*.bin + image_2/*.png + calib/*.txt
+      - Raw format: velodyne_points/data/*.bin + image_02/data/*.png +
+                    calib_cam_to_cam.txt + calib_velo_to_cam.txt
+
+    Returns per-frame annotated images, BEV, detections, and timing.
+    Capped at max_frames (default 20) to keep response time reasonable.
+    """
+    zip_bytes = await zip_file.read()
+    if not zipfile.is_zipfile(io.BytesIO(zip_bytes)):
+        raise HTTPException(status_code=400, detail="Uploaded file is not a valid ZIP archive.")
+
+    result = process_zip(zip_bytes, max_frames=max_frames)
+    return result
 
 
 # ── Vector store query ─────────────────────────────────────────────────────────

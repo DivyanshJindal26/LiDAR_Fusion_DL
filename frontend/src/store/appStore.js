@@ -54,6 +54,18 @@ const useAppStore = create((set, get) => ({
 
   clearCanvasPoints: () => set({ canvasPoints: [] }),
 
+  // ── Bulk dataset ───────────────────────────────────────────────────────────
+  bulkMode: false,          // true = bulk tab is active
+  bulkStatus: 'idle',       // 'idle' | 'processing' | 'done' | 'error'
+  bulkError: null,
+  bulkFrames: [],           // array of per-frame result objects
+  bulkSelectedIdx: null,    // index into bulkFrames currently loaded in main view
+
+  setBulkMode: (on) => set({ bulkMode: on }),
+  setBulkStatus: (status, error = null) => set({ bulkStatus: status, bulkError: error }),
+  setBulkFrames: (frames) => set({ bulkFrames: frames, bulkStatus: 'done' }),
+  setBulkSelectedIdx: (idx) => set({ bulkSelectedIdx: idx }),
+
   // ── Chat ───────────────────────────────────────────────────────────────────
   chatOpen: false,
   chatMessages: [],      // [{ id, role, content, toolCall?, toolResult? }]
