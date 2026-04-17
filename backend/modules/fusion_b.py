@@ -92,11 +92,17 @@ def _dbscan_largest(points: np.ndarray) -> np.ndarray:
 
 def _pca_box(cam_pts: np.ndarray, cls: str) -> tuple:
     """
-    Fit an oriented 3D box to camera-frame points.
-    Camera convention: x=right, y=down, z=forward.
+    Estimate oriented 3D box from camera-frame LiDAR cluster.
 
-    Returns (center [3], dims [w,h,l], yaw_rad).
-    Blends raw PCA extents with KITTI priors — more points = more trust in data.
+    Strategy:
+      - Center Z (depth) from cluster median — most accurate LiDAR quantity
+      - Center X, Y from cluster mean
+      - L and W from KITTI class priors — frustum crops are unreliable for
+        estimating length/width because they always span the full object depth
+      - H blended: cluster vertical extent + prior (height is observable)
+      - Yaw from PCA of horizontal footprint
+
+    Returns (center [3], dims [w, h, l], yaw_rad).
     """
     prior_w, prior_h, prior_l = _DIM_PRIORS.get(cls.lower(), _DEFAULT_DIMS)
 
@@ -104,33 +110,28 @@ def _pca_box(cam_pts: np.ndarray, cls: str) -> tuple:
         center = cam_pts.mean(axis=0) if len(cam_pts) else np.array([0.0, 1.0, 10.0])
         return center, np.array([prior_w, prior_h, prior_l]), 0.0
 
-    # Horizontal footprint: X (right) and Z (forward) in camera frame
-    xz = cam_pts[:, [0, 2]]
-    mean_xz = xz.mean(axis=0)
-    centered = xz - mean_xz
-    cov = centered.T @ centered / max(len(centered) - 1, 1)
+    # Depth (Z) — use median; robust to outliers at cluster edges
+    median_z  = float(np.median(cam_pts[:, 2]))
+    center_xz = cam_pts.mean(axis=0)
+    center    = np.array([center_xz[0], center_xz[1], median_z])
 
-    eigenvalues, eigenvectors = np.linalg.eigh(cov)
-    idx = np.argsort(eigenvalues)[::-1]
-    evecs = eigenvectors[:, idx]
-
-    main_axis = evecs[:, 0]
-    yaw = float(-np.arctan2(main_axis[0], main_axis[1]))
-
-    proj = centered @ evecs
-    extents = proj.max(axis=0) - proj.min(axis=0)
-    raw_l = float(extents[0]) if extents[0] > 0.1 else prior_l
-    raw_w = float(extents[1]) if extents[1] > 0.1 else prior_w
+    # Height: cluster Y-extent blended with prior (more reliable than L/W)
     raw_h = float(cam_pts[:, 1].max() - cam_pts[:, 1].min())
-
-    # Blend: full trust in data at ≥30 points, full prior at ≤3
     alpha = float(np.clip((len(cam_pts) - 3) / 27.0, 0.0, 1.0))
-    length = alpha * raw_l + (1 - alpha) * prior_l
-    width  = alpha * raw_w + (1 - alpha) * prior_w
     height = (alpha * raw_h + (1 - alpha) * prior_h) if raw_h > 0.15 else prior_h
 
-    center = cam_pts.mean(axis=0)
-    return center, np.array([width, height, length]), yaw
+    # Yaw: PCA on horizontal footprint
+    xz      = cam_pts[:, [0, 2]]
+    centered = xz - xz.mean(axis=0)
+    cov      = centered.T @ centered / max(len(centered) - 1, 1)
+    eigenvalues, eigenvectors = np.linalg.eigh(cov)
+    main_axis = eigenvectors[:, np.argmax(eigenvalues)]
+    yaw = float(-np.arctan2(main_axis[0], main_axis[1]))
+
+    # L and W always from class prior — cluster extents are unreliable in
+    # frustum-based cropping because the frustum depth range inflates the
+    # principal-axis extent by the full object-to-background span.
+    return center, np.array([prior_w, height, prior_l]), yaw
 
 
 def fuse_b(
