@@ -72,8 +72,16 @@ def _frustum_crop(
     return points[mask]
 
 
-def _dbscan_largest(points: np.ndarray) -> np.ndarray:
-    """Return the largest non-noise DBSCAN cluster (falls back to all points)."""
+def _dbscan_depth_seeded(points: np.ndarray, target_x: float) -> np.ndarray:
+    """
+    Run DBSCAN and return the cluster whose median forward distance
+    (LiDAR X = forward) is closest to `target_x`.
+
+    This replaces the old "largest cluster" strategy. For distant objects the
+    frustum sweeps through dense foreground at shorter range — largest-cluster
+    picks the foreground (e.g. 25m) instead of the actual target (e.g. 58m).
+    Seeding with the apparent-size depth estimate avoids this.
+    """
     if len(points) < 5:
         return points
     try:
@@ -84,7 +92,8 @@ def _dbscan_largest(points: np.ndarray) -> np.ndarray:
         unique = [l for l in set(labels) if l != -1]
         if not unique:
             return points
-        best = max(unique, key=lambda l: int((labels == l).sum()))
+        best = min(unique,
+                   key=lambda l: abs(float(np.median(points[labels == l, 0])) - target_x))
         return points[labels == best]
     except Exception:
         return points
@@ -167,6 +176,10 @@ def fuse_b(
 
     projected = project_points_to_image(points_clean, calib, img_shape)
 
+    # Extract fy from P2 for apparent-size depth estimation
+    P2 = calib.get("P2")
+    fy = float(P2[1, 1]) if P2 is not None else 721.5
+
     result = []
     for det in detections_2d:
         x1, y1, x2, y2 = det["bbox_2d"]
@@ -174,17 +187,24 @@ def fuse_b(
         cls = det["class"]
         prior_w, prior_h, prior_l = _DIM_PRIORS.get(cls.lower(), _DEFAULT_DIMS)
 
+        # Apparent-size depth seed: fy * class_height / bbox_height_px
+        # Used to pick the right DBSCAN cluster when the frustum contains
+        # foreground clutter at a different depth than the actual target.
+        # Camera Z ≈ LiDAR X for forward-facing objects, so we use this
+        # as the LiDAR-frame forward-distance seed.
+        z_apparent = fy * prior_h / bbox_h
+
         # Step 2: frustum crop
         cluster_lidar = _frustum_crop(projected, points_clean, det["bbox_2d"])
 
         if len(cluster_lidar) < 3:
             # Fallback: apparent-size heuristic + class prior dims
-            est_dist = round(max(2.0, 500.0 / bbox_h), 2)
+            est_dist = round(max(2.0, z_apparent), 2)
             xyz = [0.0, 1.0, est_dist]
             box_3d = [0.0, 1.0, est_dist, prior_w, prior_h, prior_l, 0.0]
         else:
-            # Step 3: DBSCAN clustering
-            cluster_lidar = _dbscan_largest(cluster_lidar)
+            # Step 3: depth-seeded DBSCAN — pick cluster nearest to apparent depth
+            cluster_lidar = _dbscan_depth_seeded(cluster_lidar, z_apparent)
 
             # Step 4: transform to camera frame, PCA box
             cam_pts = _lidar_to_cam_xyz(cluster_lidar, calib)
