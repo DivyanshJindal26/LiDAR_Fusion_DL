@@ -24,6 +24,16 @@ export async function runSceneInference(sceneId) {
   return res.json()
 }
 
+export async function ragQuery(text, nResults = 5) {
+  const res = await fetch('/api/rag-query', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, n_results: nResults }),
+  })
+  if (!res.ok) throw new Error(`RAG query failed (${res.status})`)
+  return res.json()
+}
+
 export async function runBulkInference(zipFile, maxFrames = 20) {
   const form = new FormData()
   form.append('zip_file', zipFile)

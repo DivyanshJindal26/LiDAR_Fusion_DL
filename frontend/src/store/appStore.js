@@ -3,7 +3,7 @@ import { create } from 'zustand'
 const useAppStore = create((set, get) => ({
   // ── Files ──────────────────────────────────────────────────────────────────
   files: { bin: null, image: null, calib: null, label: null },
-  uploadStatus: 'idle', // 'idle' | 'uploading' | 'success' | 'error'
+  uploadStatus: 'idle',
   uploadError: null,
 
   setFile: (type, file) =>
@@ -14,52 +14,54 @@ const useAppStore = create((set, get) => ({
 
   // ── Inference result ───────────────────────────────────────────────────────
   result: null,
-  // result shape:
-  // { annotated_image: string, bev_image: string, detections: Detection[],
-  //   inference_time_ms: number, num_points: number }
-
   setResult: (result) => set({ result, uploadStatus: 'success' }),
 
   // ── Scenes ─────────────────────────────────────────────────────────────────
   scenes: [],
   selectedScene: null,
-
   setScenes: (scenes) => set({ scenes }),
   setSelectedScene: (scene) => set({ selectedScene: scene }),
 
-  // ── UI interaction ─────────────────────────────────────────────────────────
-  hoveredDetectionId: null,
-  clickedDetectionId: null,
-  confidenceThreshold: 0.3,
+  // ── Tabs ───────────────────────────────────────────────────────────────────
+  activeTab: 'camera',   // 'camera' | 'lidar' | 'scene3d' | 'metrics'
+  setActiveTab: (tab) => set({ activeTab: tab }),
 
-  setHoveredDetectionId: (id) => set({ hoveredDetectionId: id }),
-  setClickedDetectionId: (id) => set({ clickedDetectionId: id }),
+  // ── Object distance selection (click up to 2 detections) ──────────────────
+  selectedObjects: [],   // array of detection objects (max 2)
+  toggleSelectedObject: (det) =>
+    set((s) => {
+      const exists = s.selectedObjects.findIndex(
+        (d) => d.label === det.label && d.distance_m === det.distance_m &&
+               JSON.stringify(d.center) === JSON.stringify(det.center)
+      )
+      if (exists >= 0) {
+        return { selectedObjects: s.selectedObjects.filter((_, i) => i !== exists) }
+      }
+      if (s.selectedObjects.length >= 2) {
+        return { selectedObjects: [s.selectedObjects[1], det] }
+      }
+      return { selectedObjects: [...s.selectedObjects, det] }
+    }),
+  clearSelectedObjects: () => set({ selectedObjects: [] }),
+
+  // ── RAG query ─────────────────────────────────────────────────────────────
+  ragQuery: '',
+  ragLoading: false,
+  ragResult: null,
+  setRagQuery: (q) => set({ ragQuery: q }),
+  setRagLoading: (v) => set({ ragLoading: v }),
+  setRagResult: (r) => set({ ragResult: r }),
+
+  // ── Confidence filter ─────────────────────────────────────────────────────
+  confidenceThreshold: 0.3,
   setConfidenceThreshold: (t) => set({ confidenceThreshold: t }),
 
-  // ── Canvas measure tool ────────────────────────────────────────────────────
-  canvasMode: 'view', // 'view' | 'measure'
-  canvasPoints: [],   // [{ x, y, detectionIndex: number|null }]
-
-  toggleCanvasMode: () =>
-    set((s) => ({
-      canvasMode: s.canvasMode === 'view' ? 'measure' : 'view',
-      canvasPoints: [],
-    })),
-
-  addCanvasPoint: (point) =>
-    set((s) => ({ canvasPoints: [...s.canvasPoints, point] })),
-
-  removeLastCanvasPoint: () =>
-    set((s) => ({ canvasPoints: s.canvasPoints.slice(0, -1) })),
-
-  clearCanvasPoints: () => set({ canvasPoints: [] }),
-
   // ── Bulk dataset ───────────────────────────────────────────────────────────
-  bulkMode: false,          // true = bulk tab is active
-  bulkStatus: 'idle',       // 'idle' | 'processing' | 'done' | 'error'
+  bulkMode: false,
+  bulkStatus: 'idle',
   bulkError: null,
-  bulkFrames: [],           // array of per-frame result objects
-  bulkSelectedIdx: null,    // index into bulkFrames currently loaded in main view
+  bulkFrames: [],
+  bulkSelectedIdx: null,
 
   setBulkMode: (on) => set({ bulkMode: on }),
   setBulkStatus: (status, error = null) => set({ bulkStatus: status, bulkError: error }),
@@ -68,9 +70,9 @@ const useAppStore = create((set, get) => ({
 
   // ── Chat ───────────────────────────────────────────────────────────────────
   chatOpen: false,
-  chatMessages: [],      // [{ id, role, content, toolCall?, toolResult? }]
+  chatMessages: [],
   chatLoading: false,
-  conversationHistory: [], // raw OpenAI-format messages for API
+  conversationHistory: [],
 
   setChatOpen: (open) => set({ chatOpen: open }),
   setChatLoading: (loading) => set({ chatLoading: loading }),
@@ -86,9 +88,7 @@ const useAppStore = create((set, get) => ({
     }),
 
   setConversationHistory: (history) => set({ conversationHistory: history }),
-
-  clearChat: () =>
-    set({ chatMessages: [], conversationHistory: [] }),
+  clearChat: () => set({ chatMessages: [], conversationHistory: [] }),
 }))
 
 export default useAppStore

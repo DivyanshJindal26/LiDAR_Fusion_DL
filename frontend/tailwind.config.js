@@ -4,6 +4,16 @@ export default {
   theme: {
     extend: {
       colors: {
+        bg:       '#000000',
+        surface:  '#0a0a0a',
+        surface2: '#111111',
+        accent:   '#00e676',
+        accent2:  '#2979ff',
+        accent3:  '#ff3d71',
+        accent4:  '#ffab00',
+        text:     '#f0f0f0',
+        subtext:  '#555555',
+        border:   'rgba(255,255,255,0.06)',
         brand: { DEFAULT: '#3b82f6', dim: '#1d4ed8' },
       },
       animation: {

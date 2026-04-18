@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --bg:        #000000;
+  --surface:   #0a0a0a;
+  --surface-2: #111111;
+  --border:    rgba(255, 255, 255, 0.06);
+  --text:      #f0f0f0;
+  --subtext:   #555555;
+  --accent:    #00e676;
+  --accent-2:  #2979ff;
+  --accent-3:  #ff3d71;
+  --accent-4:  #ffab00;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
@@ -11,62 +24,61 @@
 
   html, body, #root {
     height: 100%;
-    background: #020617;
-    color: #f1f5f9;
+    background: #000000;
+    color: #f0f0f0;
     font-family: system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
   }
 }
 
 @layer components {
-  .glass {
-    background: rgba(15, 23, 42, 0.6);
-    backdrop-filter: blur(12px) saturate(1.8);
-    border: 1px solid rgba(148, 163, 184, 0.12);
-    border-radius: 0.75rem;
+  .amoled-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
   }
 
-  .glass-elevated {
-    background: rgba(30, 41, 59, 0.85);
-    backdrop-filter: blur(20px) saturate(2);
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    border-radius: 0.75rem;
+  .amoled-panel-elevated {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 0.5rem;
   }
 
-  .badge-green {
-    @apply bg-green-500/20 text-green-400 border border-green-500/30;
+  .badge-car {
+    @apply bg-[#2979ff]/20 text-[#2979ff] border border-[#2979ff]/30;
+  }
+  .badge-pedestrian {
+    @apply bg-[#00e676]/20 text-[#00e676] border border-[#00e676]/30;
+  }
+  .badge-cyclist {
+    @apply bg-[#ffab00]/20 text-[#ffab00] border border-[#ffab00]/30;
+  }
+  .badge-van {
+    @apply bg-[#e040fb]/20 text-[#e040fb] border border-[#e040fb]/30;
+  }
+  .badge-truck {
+    @apply bg-[#ff3d71]/20 text-[#ff3d71] border border-[#ff3d71]/30;
+  }
+  .badge-default {
+    @apply bg-white/5 text-[#f0f0f0] border border-white/10;
   }
 
-  .badge-amber {
-    @apply bg-amber-500/20 text-amber-400 border border-amber-500/30;
+  .tab-active {
+    border-bottom: 2px solid #00e676;
+    color: #00e676;
   }
 
-  .badge-red {
-    @apply bg-red-500/20 text-red-400 border border-red-500/30;
+  .tab-inactive {
+    border-bottom: 2px solid transparent;
+    color: #555555;
   }
-
-  .badge-blue {
-    @apply bg-blue-500/20 text-blue-400 border border-blue-500/30;
-  }
-
-  .badge-slate {
-    @apply bg-slate-700/50 text-slate-300 border border-slate-600/30;
+  .tab-inactive:hover {
+    color: #f0f0f0;
   }
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.4);
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.5);
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.8);
-}
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: #222; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #333; }

@@ -13,7 +13,7 @@ COCO_TO_KITTI = {
     "motorcycle": "Cyclist",
 }
 
-MODEL_NAME = "yolov8m.pt"
+MODEL_NAME = "yolov8l.pt"
 
 # KITTI images are 1242×375 (~3.3:1). At imgsz=640 they letterbox to 640×193
 # — small/distant objects shrink to a few pixels and get missed.

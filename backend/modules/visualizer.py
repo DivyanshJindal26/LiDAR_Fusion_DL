@@ -322,3 +322,95 @@ def generate_bev(points: np.ndarray, detections: list[dict]) -> str:
     fig.tight_layout(pad=0.4)
 
     return _fig_to_base64(fig)
+
+
+# ── White-background LiDAR BEV (matches image.png) ────────────────────────────
+
+_CLASS_BEV_COLORS = {
+    "car":        "#2979ff",
+    "pedestrian": "#00e676",
+    "cyclist":    "#ffab00",
+    "truck":      "#ff3d71",
+    "bus":        "#e040fb",
+    "person":     "#00e676",
+    "bicycle":    "#ffab00",
+}
+
+
+def render_lidar_bev_white(pts_xyz: np.ndarray, detections: list) -> str:
+    """
+    Top-down BEV on WHITE background — matches image.png style.
+    Points colored by height (jet colormap, z clipped to [-2, 3] m).
+    Box footprints overlaid in class colors.
+    Returns base64 PNG.
+    """
+    rng    = np.random.default_rng(0)
+    fig, ax = plt.subplots(figsize=(8, 8), facecolor="white")
+    ax.set_facecolor("white")
+    ax.set_xlim(-30, 30)
+    ax.set_ylim(-5, 60)
+    ax.set_aspect("equal")
+
+    # BEV axes: bev_x = pts_xyz[:,1] (Y left → right on screen),
+    #           bev_y = pts_xyz[:,0] (X forward → up on screen)
+    n_show = min(len(pts_xyz), 20_000)
+    idx    = rng.choice(len(pts_xyz), n_show, replace=False)
+    sub    = pts_xyz[idx]
+    bev_x  = sub[:, 1]   # Y_lidar (lateral)
+    bev_y  = sub[:, 0]   # X_lidar (forward)
+    z_norm = np.clip((sub[:, 2] + 2.0) / 5.0, 0.0, 1.0)
+    ax.scatter(bev_x, bev_y, c=z_norm, cmap="jet",
+               s=0.6, alpha=0.7, linewidths=0, vmin=0, vmax=1)
+
+    # Box footprints — use corners XY (LiDAR frame)
+    for det in detections:
+        label   = det.get("label", det.get("class", "car")).lower()
+        color   = _CLASS_BEV_COLORS.get(label, "#888888")
+        corners = det.get("corners")
+        if corners is None:
+            continue
+        c = np.array(corners)   # (8, 3) in LiDAR frame
+        # bottom face: indices 0-3
+        bottom = c[:4]
+        xs = list(bottom[:, 1]) + [bottom[0, 1]]   # Y → bev_x
+        ys = list(bottom[:, 0]) + [bottom[0, 0]]   # X → bev_y
+        ax.fill(xs, ys, color=color, alpha=0.15)
+        ax.plot(xs, ys, color=color, lw=1.5)
+
+        # front edge highlight (first edge of bottom face)
+        ax.plot([bottom[0, 1], bottom[1, 1]],
+                [bottom[0, 0], bottom[1, 0]], color=color, lw=3.0)
+
+        cx, cy = float(c[:, 1].mean()), float(c[:, 0].mean())
+        dist   = det.get("distance_m", round(float(np.linalg.norm(c.mean(axis=0))), 1))
+        ax.scatter([cx], [cy], color=color, s=25, zorder=5,
+                   edgecolors="black", linewidths=0.5)
+        ax.text(cx + 0.5, cy, f"{dist:.0f}m",
+                color=color, fontsize=6, fontfamily="monospace", va="center")
+
+    # Ego vehicle
+    ax.scatter([0], [0], marker="^", s=100, color="#ff3d71",
+               edgecolors="black", linewidths=1.5, zorder=6)
+
+    # Distance rings
+    theta = np.linspace(0, 2 * np.pi, 360)
+    for r, lbl in [(10, "10m"), (20, "20m"), (30, "30m"), (50, "50m")]:
+        ax.plot(r * np.sin(theta), r * np.cos(theta),
+                color="#aaaaaa", lw=0.5, ls="--", alpha=0.5)
+        ax.text(0.5, r + 0.5, lbl, color="#888888", fontsize=6, ha="center")
+
+    ax.set_xlabel("Y lateral (m)", fontsize=8, color="#444444")
+    ax.set_ylabel("X forward (m)", fontsize=8, color="#444444")
+    ax.tick_params(colors="#666666", labelsize=7)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("#dddddd")
+    ax.grid(True, color="#eeeeee", lw=0.4)
+    fig.tight_layout(pad=0.3)
+    return _fig_to_base64(fig)
+
+
+def cv2_to_base64(img_bgr: np.ndarray) -> str:
+    """Convert a BGR numpy image (from cv2) to base64 PNG string."""
+    import cv2 as _cv2
+    _, buf = _cv2.imencode(".png", img_bgr)
+    return base64.b64encode(buf.tobytes()).decode()
