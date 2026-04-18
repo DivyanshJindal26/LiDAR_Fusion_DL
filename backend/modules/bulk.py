@@ -107,6 +107,11 @@ def _build_calib_with_proj(calib_raw: dict) -> dict:
     return calib
 
 
+def _frame_sort_key(stem: str):
+    """Sort KITTI frame stems numerically when possible, lexicographically otherwise."""
+    return (0, int(stem)) if stem.isdigit() else (1, stem)
+
+
 # ── Per-frame pipeline ─────────────────────────────────────────────────────────
 
 def _process_frame(bin_bytes: bytes, img_bytes: bytes, calib_dict: dict) -> dict:
@@ -186,13 +191,19 @@ def process_zip(zip_bytes: bytes, max_frames: int = 20, is_timeseries: bool = Tr
         names = [n for n in zf.namelist() if not n.endswith("/")]
         cats = _categorise(names)
 
-        # Sorted stems — process only frames that have all required per-frame files.
+        # Follow KITTI frame ordering: iterate in camera timeline order, then filter
+        # to valid frames with required files.
+        camera_order = sorted(cats["png"].keys(), key=_frame_sort_key)
+
+        # Process only frames that have all required per-frame files.
         # If per-frame calib exists in the ZIP, require it as well.
         if cats["calib_frame"]:
-            common_stems = sorted(set(cats["bin"]) & set(cats["png"]) & set(cats["calib_frame"]))
+            common = set(cats["bin"]) & set(cats["png"]) & set(cats["calib_frame"])
         else:
             # Raw KITTI style uses date-level calib files, so stem-wise pair is bin+png.
-            common_stems = sorted(set(cats["bin"]) & set(cats["png"]))
+            common = set(cats["bin"]) & set(cats["png"])
+
+        common_stems = [s for s in camera_order if s in common]
 
         total_found = len(common_stems)
         stems_to_run = common_stems[:max_frames]
