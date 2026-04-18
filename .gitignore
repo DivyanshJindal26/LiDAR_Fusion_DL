@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pth
+*.pt
+*.engine
+.env
+chroma_db/
+backend/chroma_db/
+OpenPCDet/
+data/
+output/
+*.png
+failed.md
+node_modules/
+dist/
+.vite/
