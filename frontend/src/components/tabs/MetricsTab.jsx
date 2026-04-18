@@ -1,11 +1,17 @@
 import useAppStore from '../../store/appStore'
 
+function toDisplayValue(value) {
+  if (value == null) return '—'
+  if (typeof value === 'number' || typeof value === 'string') return value
+  return '—'
+}
+
 function StatCard({ label, value, unit = '', color = '#f0f0f0' }) {
   return (
     <div className="amoled-panel p-4 flex flex-col gap-1 min-w-[120px]">
       <span className="text-[10px] uppercase tracking-widest text-[#555]">{label}</span>
       <span className="text-2xl font-bold tabular-nums" style={{ color }}>
-        {value}<span className="text-xs font-normal text-[#555] ml-1">{unit}</span>
+        {toDisplayValue(value)}<span className="text-xs font-normal text-[#555] ml-1">{unit}</span>
       </span>
     </div>
   )
@@ -37,20 +43,37 @@ function PipelineBar({ stats }) {
 
 function MetricsSection({ metrics }) {
   if (!metrics) return null
-  const { precision, recall, f1, iou_threshold, true_positives, false_positives, false_negatives } = metrics
+
+  const summary = metrics.summary ?? metrics
+  const precision = summary.precision
+  const recall = summary.recall
+  const f1 = summary.f1 ?? (
+    precision != null && recall != null && (precision + recall) > 0
+      ? (2 * precision * recall) / (precision + recall)
+      : null
+  )
+  const iouThreshold = summary.iou_threshold ?? 0.3
+
+  const tp = summary.true_positives
+    ?? summary.matched
+    ?? (Array.isArray(metrics.matched) ? metrics.matched.length : null)
+  const fp = summary.false_positives
+    ?? (Array.isArray(metrics.false_positives) ? metrics.false_positives.length : null)
+  const fn = summary.false_negatives
+    ?? (Array.isArray(metrics.false_negatives) ? metrics.false_negatives.length : null)
 
   return (
     <div className="amoled-panel p-4">
       <div className="text-[10px] uppercase tracking-widest text-[#555] mb-3">
-        GT Evaluation — IoU@{iou_threshold ?? 0.5}
+        GT Evaluation — IoU@{iouThreshold}
       </div>
       <div className="flex gap-4 flex-wrap">
-        <StatCard label="Precision" value={(precision * 100).toFixed(1)} unit="%" color="#00e676" />
-        <StatCard label="Recall"    value={(recall * 100).toFixed(1)}    unit="%" color="#2979ff" />
-        <StatCard label="F1"        value={(f1 * 100).toFixed(1)}         unit="%" color="#ffab00" />
-        <StatCard label="TP" value={true_positives}  color="#00e676" />
-        <StatCard label="FP" value={false_positives} color="#ff3d71" />
-        <StatCard label="FN" value={false_negatives} color="#ffab00" />
+        <StatCard label="Precision" value={precision != null ? (precision * 100).toFixed(1) : null} unit="%" color="#00e676" />
+        <StatCard label="Recall"    value={recall != null ? (recall * 100).toFixed(1) : null}       unit="%" color="#2979ff" />
+        <StatCard label="F1"        value={f1 != null ? (f1 * 100).toFixed(1) : null}               unit="%" color="#ffab00" />
+        <StatCard label="TP" value={tp} color="#00e676" />
+        <StatCard label="FP" value={fp} color="#ff3d71" />
+        <StatCard label="FN" value={fn} color="#ffab00" />
       </div>
     </div>
   )
@@ -71,16 +94,17 @@ export default function MetricsTab() {
 
   const classes = {}
   for (const d of detections) {
-    classes[d.label] = (classes[d.label] || 0) + 1
+    const cls = d?.label ?? d?.class ?? 'unknown'
+    classes[cls] = (classes[cls] || 0) + 1
   }
 
   return (
     <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
       {/* Quick stats */}
       <div className="flex gap-3 flex-wrap">
-        <StatCard label="Inference"   value={inference_time_ms}       unit="ms"  color="#00e676" />
+        <StatCard label="Inference"   value={typeof inference_time_ms === 'number' ? inference_time_ms : null} unit="ms"  color="#00e676" />
         <StatCard label="LiDAR pts"   value={(num_points ?? 0).toLocaleString()} color="#2979ff" />
-        <StatCard label="Detections"  value={detections.length}       color="#ffab00" />
+        <StatCard label="Detections"  value={Array.isArray(detections) ? detections.length : 0} color="#ffab00" />
         {Object.entries(classes).map(([cls, n]) => (
           <StatCard key={cls} label={cls} value={n} color="#f0f0f0" />
         ))}

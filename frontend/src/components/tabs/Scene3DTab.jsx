@@ -20,7 +20,8 @@ function buildBoxTraces(detections) {
   for (const det of detections) {
     if (!det.corners || det.corners.length !== 8) continue
     const c = det.corners
-    const color = BOX_COLORS[det.label?.toLowerCase()] || '#aaa'
+    const detClass = det.label ?? det.class ?? 'object'
+    const color = BOX_COLORS[detClass.toLowerCase()] || '#aaa'
 
     const xs = [], ys = [], zs = []
     for (const [a, b] of BOX_EDGES) {
@@ -34,7 +35,7 @@ function buildBoxTraces(detections) {
       mode: 'lines',
       x: xs, y: ys, z: zs,
       line: { color, width: 2 },
-      name: `${det.label} ${(det.distance_m || 0).toFixed(1)}m`,
+      name: `${detClass} ${(det.distance_m || 0).toFixed(1)}m`,
       showlegend: true,
       hoverinfo: 'name',
     })
@@ -57,10 +58,10 @@ export default function Scene3DTab() {
       const centerY = result.detections.map((d) => d.center?.[1] || 0)
       const centerZ = result.detections.map((d) => d.center?.[2] || 0)
       const labels  = result.detections.map(
-        (d) => `${d.label}<br>${(d.distance_m || 0).toFixed(1)}m<br>${(d.score * 100).toFixed(0)}%`
+        (d) => `${d.label ?? d.class ?? 'object'}<br>${(d.distance_m || 0).toFixed(1)}m<br>${((d.score ?? d.confidence ?? 0) * 100).toFixed(0)}%`
       )
       const colors  = result.detections.map(
-        (d) => BOX_COLORS[d.label?.toLowerCase()] || '#aaa'
+        (d) => BOX_COLORS[(d.label ?? d.class ?? 'object').toLowerCase()] || '#aaa'
       )
 
       if (centerX.length > 0) {
