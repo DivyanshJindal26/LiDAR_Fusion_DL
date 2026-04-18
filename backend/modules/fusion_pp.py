@@ -227,6 +227,7 @@ def run_old_pipeline(yolo_boxes, pts_xyz, calib, img_shape):
             "angle":   box["angle"],
             "bbox_2d": (x1, y1, x2, y2),
             "source":  box["source"],
+            "dist":    float(np.linalg.norm(box["center"])),
         })
     return dets
 
@@ -250,6 +251,38 @@ def project_box_corners_to_image(corners_3d, calib, img_shape):
     if x2 <= x1 or y2 <= y1:
         return None
     return (x1, y1, x2, y2)
+
+
+def project_3d_box_to_image(corners_3d, calib, img_shape):
+    """Project 8 corners of 3D box onto image. Returns (8,2) pixel coords."""
+    N = 8
+    pts_h = np.vstack([corners_3d.T, np.ones((1, N))])
+    proj  = calib["T_velo_to_img"] @ pts_h
+    depth = proj[2]
+    if np.all(depth <= 0):
+        return None
+    u = proj[0] / (depth + 1e-9)
+    v = proj[1] / (depth + 1e-9)
+    return np.stack([u, v], axis=1).astype(int)
+
+
+def draw_3d_box_on_image(img, corners_2d, color=(0, 255, 0), thickness=2):
+    """Draw wireframe 3D box on image from 8 projected corners."""
+    if corners_2d is None:
+        return
+    edges = [
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7),
+    ]
+    h, w = img.shape[:2]
+    for i, j in edges:
+        # Keep this notebook-style clipping line for parity even though
+        # the draw call uses the raw projected endpoints.
+        _ = tuple(np.clip(corners_2d[i], [-500, -500], [w + 500, h + 500]))
+        _ = tuple(np.clip(corners_2d[j], [-500, -500], [w + 500, h + 500]))
+        if (0 <= corners_2d[i][0] < w or 0 <= corners_2d[j][0] < w):
+            cv2.line(img, tuple(corners_2d[i]), tuple(corners_2d[j]), color, thickness)
 
 
 def is_valid_box(det):
@@ -416,23 +449,8 @@ def run_fused_pipeline(
     for det in final_dets:
         color = det.get("color", (0, 255, 0))
 
-        c2d = project_box_corners_to_image(det["corners"], calib, img_shape)
-        if c2d:
-            N     = 8
-            pts_h = np.vstack([det["corners"].T, np.ones((1, N))])
-            proj  = calib["T_velo_to_img"] @ pts_h
-            dep   = proj[2]
-            uu = (proj[0] / (dep + 1e-9)).astype(int)
-            vv = (proj[1] / (dep + 1e-9)).astype(int)
-            edges = [
-                (0, 1), (1, 2), (2, 3), (3, 0),
-                (4, 5), (5, 6), (6, 7), (7, 4),
-                (0, 4), (1, 5), (2, 6), (3, 7),
-            ]
-            for a, b in edges:
-                p1, p2 = (uu[a], vv[a]), (uu[b], vv[b])
-                if all(-500 < x < 3000 for x in p1 + p2):
-                    cv2.line(img_boxes, p1, p2, color, 2)
+        corners_2d = project_3d_box_to_image(det["corners"], calib, img_shape)
+        draw_3d_box_on_image(img_boxes, corners_2d, color=color, thickness=2)
 
         dist = float(np.linalg.norm(det["center"]))
         src  = det.get("source", "")
