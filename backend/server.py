@@ -130,7 +130,6 @@ async def infer(
 # ── Scenes ─────────────────────────────────────────────────────────────────────
 
 KITTI_DATA_DIR = os.environ.get("KITTI_DATA_DIR", "data/kitti")
-DUMMY_SCENES   = ["scene_0001", "scene_0002", "scene_0003", "scene_0007", "scene_0015"]
 
 
 @app.get("/scenes")
@@ -140,9 +139,9 @@ async def list_scenes():
             d for d in os.listdir(KITTI_DATA_DIR)
             if os.path.isdir(os.path.join(KITTI_DATA_DIR, d))
         )
-        return real if real else DUMMY_SCENES
+        return real
     except FileNotFoundError:
-        return DUMMY_SCENES
+        return []
 
 
 @app.post("/infer-scene/{scene_id}")
