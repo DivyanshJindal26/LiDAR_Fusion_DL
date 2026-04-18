@@ -297,7 +297,7 @@ def box_iou_3d_centers(det_a, det_b, dist_thresh):
 # ── PP gating and merge (verbatim from notebook) ──────────────────────────────
 
 def gate_pp_with_yolo(pp_dets, yolo_boxes, calib, img_shape,
-                      iou_thresh=0.05, score_thresh=0.25):
+                      iou_thresh=0.25, score_thresh=0.45):
     gated = []
     for det in pp_dets:
         if det["score"] < score_thresh:
