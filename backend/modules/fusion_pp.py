@@ -227,7 +227,6 @@ def run_old_pipeline(yolo_boxes, pts_xyz, calib, img_shape):
             "angle":   box["angle"],
             "bbox_2d": (x1, y1, x2, y2),
             "source":  box["source"],
-            "dist":    float(np.linalg.norm(box["center"])),
         })
     return dets
 
@@ -235,22 +234,16 @@ def run_old_pipeline(yolo_boxes, pts_xyz, calib, img_shape):
 # ── Inferred helpers (not in visible notebook cells) ──────────────────────────
 
 def project_box_corners_to_image(corners_3d, calib, img_shape):
-    """Project 8 LiDAR-frame 3D corners through T_velo_to_img; return 2D bbox or None."""
-    h, w = img_shape[:2]
-    N    = 8
-    pts_h = np.vstack([corners_3d.T, np.ones((1, N))])
-    proj  = calib["T_velo_to_img"] @ pts_h
-    depth = proj[2]
-    if np.all(depth <= 0):
+    """Projects 8 3D corners to 2D image and extracts the outer (x1, y1, x2, y2) bounding box."""
+    corners_2d = project_3d_box_to_image(corners_3d, calib, img_shape)
+    if corners_2d is None:
         return None
-    valid = depth > 0
-    u = proj[0][valid] / (depth[valid] + 1e-9)
-    v = proj[1][valid] / (depth[valid] + 1e-9)
-    x1, y1 = max(0, int(u.min())), max(0, int(v.min()))
-    x2, y2 = min(w, int(u.max())), min(h, int(v.max()))
-    if x2 <= x1 or y2 <= y1:
-        return None
-    return (x1, y1, x2, y2)
+
+    xmin = np.min(corners_2d[:, 0])
+    ymin = np.min(corners_2d[:, 1])
+    xmax = np.max(corners_2d[:, 0])
+    ymax = np.max(corners_2d[:, 1])
+    return (xmin, ymin, xmax, ymax)
 
 
 def project_3d_box_to_image(corners_3d, calib, img_shape):
@@ -286,12 +279,20 @@ def draw_3d_box_on_image(img, corners_2d, color=(0, 255, 0), thickness=2):
 
 
 def is_valid_box(det):
+    """Sanity check on volume to filter out absurdly large/small PP ghost boxes."""
     l, w, h = det["dims"]
-    return (0.3 < l < 20) and (0.3 < w < 8) and (0.3 < h < 6)
+    vol = l * w * h
+    if vol < 0.1 or vol > 200:
+        return False
+    return True
 
 
-def box_iou_3d_centers(det_a, det_b, dist_thresh):
-    return float(np.linalg.norm(det_a["center"] - det_b["center"])) < dist_thresh
+def box_iou_3d_centers(det_a, det_b, dist_thresh=2.0):
+    """Merge fallback check based strictly on 3D L2 center distance."""
+    c_a = np.array(det_a["center"])
+    c_b = np.array(det_b["center"])
+    dist = np.linalg.norm(c_a - c_b)
+    return dist < dist_thresh
 
 
 # ── PP gating and merge (verbatim from notebook) ──────────────────────────────
@@ -449,8 +450,24 @@ def run_fused_pipeline(
     for det in final_dets:
         color = det.get("color", (0, 255, 0))
 
-        corners_2d = project_3d_box_to_image(det["corners"], calib, img_shape)
-        draw_3d_box_on_image(img_boxes, corners_2d, color=color, thickness=2)
+        # 3D box wireframe
+        c2d = project_box_corners_to_image(det["corners"], calib, img_shape)
+        if c2d:
+            N = 8
+            pts_h = np.vstack([det["corners"].T, np.ones((1, N))])
+            proj  = calib["T_velo_to_img"] @ pts_h
+            dep   = proj[2]
+            uu = (proj[0] / (dep + 1e-9)).astype(int)
+            vv = (proj[1] / (dep + 1e-9)).astype(int)
+            edges = [
+                (0, 1), (1, 2), (2, 3), (3, 0),
+                (4, 5), (5, 6), (6, 7), (7, 4),
+                (0, 4), (1, 5), (2, 6), (3, 7),
+            ]
+            for a, b in edges:
+                p1, p2 = (uu[a], vv[a]), (uu[b], vv[b])
+                if all(-500 < x < 3000 for x in p1 + p2):
+                    cv2.line(img_boxes, p1, p2, color, 2)
 
         dist = float(np.linalg.norm(det["center"]))
         src  = det.get("source", "")
