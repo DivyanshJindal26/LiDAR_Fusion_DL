@@ -23,7 +23,7 @@ _client = AsyncOpenAI(
     },
 )
 
-MODEL = "anthropic/claude-sonnet-4-6"
+MODEL = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-3-mini-beta")
 
 
 def _content_to_text(content: Any) -> str:

@@ -244,7 +244,7 @@ async def rag_query(req: RagRequest):
                 api_key=api_key,
             )
             resp = client.chat.completions.create(
-                model="anthropic/claude-sonnet-4-6",
+                model=os.environ.get("OPENROUTER_MODEL", "x-ai/grok-3-mini-beta"),
                 messages=[
                     {
                         "role": "system",

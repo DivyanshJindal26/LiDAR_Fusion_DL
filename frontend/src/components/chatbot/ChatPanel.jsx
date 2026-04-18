@@ -21,7 +21,7 @@ export default function ChatPanel() {
       <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06]">
         <div>
           <p className="text-xs font-semibold text-[#f0f0f0]">AI Assistant</p>
-          <p className="text-[9px] text-[#555]">claude-sonnet-4-6 · OpenRouter</p>
+          <p className="text-[9px] text-[#555]">grok-3-mini · OpenRouter</p>
         </div>
         <div className="flex items-center gap-1">
           {chatMessages.length > 0 && (

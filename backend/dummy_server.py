@@ -42,7 +42,7 @@ _oai = AsyncOpenAI(
         "X-Title": "LiDAR Fusion Demo",
     },
 )
-MODEL = "anthropic/claude-sonnet-4-6"
+MODEL = os.environ.get("OPENROUTER_MODEL", "x-ai/grok-3-mini-beta")
 
 # ── Dummy scene data ───────────────────────────────────────────────────────────
 DUMMY_SCENES = ["scene_0001", "scene_0002", "scene_0003", "scene_0007", "scene_0015"]
