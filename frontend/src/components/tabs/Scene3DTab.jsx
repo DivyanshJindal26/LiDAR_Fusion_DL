@@ -2,11 +2,10 @@ import { useEffect, useRef } from 'react'
 import useAppStore from '../../store/appStore'
 
 const BOX_COLORS = {
-  car:        '#2979ff',
-  pedestrian: '#00e676',
-  cyclist:    '#ffab00',
-  van:        '#e040fb',
-  truck:      '#ff3d71',
+  car:        'lime',
+  pedestrian: 'cyan',
+  cyclist:    'yellow',
+  truck:      'orange',
 }
 
 const BOX_EDGES = [
@@ -34,7 +33,7 @@ function buildBoxTraces(detections) {
       type: 'scatter3d',
       mode: 'lines',
       x: xs, y: ys, z: zs,
-      line: { color, width: 2 },
+      line: { color, width: 5 },
       name: `${detClass} ${(det.distance_m || 0).toFixed(1)}m`,
       showlegend: true,
       hoverinfo: 'name',
@@ -54,47 +53,35 @@ export default function Scene3DTab() {
     import('plotly.js-dist-min').then((Plotly) => {
       const traces = buildBoxTraces(result.detections)
 
-      const centerX = result.detections.map((d) => d.center?.[0] || 0)
-      const centerY = result.detections.map((d) => d.center?.[1] || 0)
-      const centerZ = result.detections.map((d) => d.center?.[2] || 0)
-      const labels  = result.detections.map(
-        (d) => `${d.label ?? d.class ?? 'object'}<br>${(d.distance_m || 0).toFixed(1)}m<br>${((d.score ?? d.confidence ?? 0) * 100).toFixed(0)}%`
-      )
-      const colors  = result.detections.map(
-        (d) => BOX_COLORS[(d.label ?? d.class ?? 'object').toLowerCase()] || '#aaa'
-      )
-
-      if (centerX.length > 0) {
-        traces.unshift({
-          type: 'scatter3d',
-          mode: 'markers+text',
-          x: centerX, y: centerY, z: centerZ,
-          text: labels,
-          textposition: 'top center',
-          textfont: { size: 9, color: '#f0f0f0' },
-          marker: { size: 4, color: colors, opacity: 0.9 },
-          name: 'centers',
-          showlegend: false,
-          hoverinfo: 'text',
-        })
-      }
+      traces.push({
+        type: 'scatter3d',
+        mode: 'markers+text',
+        x: [0], y: [0], z: [0],
+        marker: { size: 6, color: 'red', symbol: 'diamond' },
+        text: ['EGO'],
+        textposition: 'top center',
+        name: 'Ego',
+        showlegend: true,
+        hoverinfo: 'name',
+      })
 
       const layout = {
-        paper_bgcolor: '#000',
-        plot_bgcolor:  '#000',
-        font: { color: '#f0f0f0', size: 10 },
-        margin: { l: 0, r: 0, t: 0, b: 0 },
+        title: 'PointPillars — 3D Detections',
+        paper_bgcolor: '#111',
+        plot_bgcolor:  '#111',
+        font: { color: 'white', size: 10 },
+        margin: { l: 0, r: 0, t: 36, b: 0 },
         legend: {
-          bgcolor: '#0a0a0a',
-          bordercolor: 'rgba(255,255,255,0.06)',
+          bgcolor: '#222',
+          bordercolor: '#555',
           borderwidth: 1,
-          font: { size: 9, color: '#f0f0f0' },
+          font: { size: 10, color: 'white' },
         },
         scene: {
-          bgcolor: '#000',
-          xaxis: { title: 'X fwd (m)', gridcolor: '#1a1a1a', zerolinecolor: '#333', color: '#555' },
-          yaxis: { title: 'Y left (m)', gridcolor: '#1a1a1a', zerolinecolor: '#333', color: '#555' },
-          zaxis: { title: 'Z up (m)',  gridcolor: '#1a1a1a', zerolinecolor: '#333', color: '#555' },
+          bgcolor: '#111',
+          xaxis: { title: 'X fwd(m)', color: 'white' },
+          yaxis: { title: 'Y left(m)', color: 'white' },
+          zaxis: { title: 'Z up(m)', color: 'white' },
           aspectmode: 'data',
           camera: {
             eye: { x: -0.3, y: -1.8, z: 0.9 },
