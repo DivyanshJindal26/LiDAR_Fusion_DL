@@ -223,16 +223,20 @@ def _build_video_from_base64_frames(frames: list[dict], key: str, fps: float = 1
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-# ── Public entry point ─────────────────────────────────────────────────────────
+# ── Streaming entry point ──────────────────────────────────────────────────────
 
-def process_zip(zip_bytes: bytes, is_timeseries: bool = True) -> dict:
+def stream_process_zip(zip_bytes: bytes, is_timeseries: bool = True):
     """
-    Extract a KITTI ZIP, auto-detect format, run inference on ALL frames,
-    return a summary dict.
+    Generator that yields SSE-ready dicts:
+      {"type": "start",    "total": N}
+      {"type": "progress", "current": i, "total": N, "frame_id": stem}  — one per frame
+      {"type": "encoding"}                                                 — video encoding phase
+      {"type": "done",     "frames": [...], "video_annotated_mp4": ..., ...}
+    Errors on individual frames are reported inside the progress event as "error".
     """
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         names = [n for n in zf.namelist() if not n.endswith("/")]
-        cats = _categorise(names)
+        cats  = _categorise(names)
 
         camera_order = sorted(cats["png"].keys(), key=_frame_sort_key)
 
@@ -242,37 +246,48 @@ def process_zip(zip_bytes: bytes, is_timeseries: bool = True) -> dict:
             common = set(cats["bin"]) & set(cats["png"])
 
         common_stems = [s for s in camera_order if s in common]
-        total_found = len(common_stems)
+        total_found  = len(common_stems)
+
+        yield {"type": "start", "total": total_found}
 
         frames = []
         errors = []
-        for stem in common_stems:
+        for i, stem in enumerate(common_stems):
             try:
                 calib_dict = _build_calib_dict(zf, cats, stem)
                 if calib_dict is None or "P2" not in calib_dict:
-                    # Missing/incomplete calib for this frame: silently skip.
+                    errors.append(f"{stem}: missing calib")
+                    yield {"type": "progress", "current": i + 1, "total": total_found,
+                           "frame_id": stem, "error": "missing calib"}
                     continue
 
-                bin_bytes = zf.read(cats["bin"][stem])
-                img_bytes = zf.read(cats["png"][stem])
-
-                result = _process_frame(bin_bytes, img_bytes, calib_dict)
+                bin_b = zf.read(cats["bin"][stem])
+                img_b = zf.read(cats["png"][stem])
+                result = _process_frame(bin_b, img_b, calib_dict)
                 result["frame_id"] = stem
                 frames.append(result)
+                yield {"type": "progress", "current": i + 1, "total": total_found, "frame_id": stem}
             except Exception as exc:
                 errors.append(f"{stem}: {exc}")
+                yield {"type": "progress", "current": i + 1, "total": total_found,
+                       "frame_id": stem, "error": str(exc)}
 
-    video_boxes_mp4 = _build_video_from_base64_frames(frames, "camera_image") if is_timeseries else None
-    video_lidar_mp4 = _build_video_from_base64_frames(frames, "lidar_image")  if is_timeseries else None
-    video_bev_mp4   = _build_video_from_base64_frames(frames, "lidar_bev")    if is_timeseries else None
+    # Video encoding phase (can take a while — signal the frontend)
+    if is_timeseries and frames:
+        yield {"type": "encoding"}
 
-    return {
+    video_annotated = _build_video_from_base64_frames(frames, "camera_image") if is_timeseries else None
+    video_lidar     = _build_video_from_base64_frames(frames, "lidar_image")  if is_timeseries else None
+    video_bev       = _build_video_from_base64_frames(frames, "lidar_bev")    if is_timeseries else None
+
+    yield {
+        "type":                "done",
         "frames":              frames,
         "total_found":         total_found,
         "processed":           len(frames),
         "skipped_errors":      errors,
         "is_timeseries":       bool(is_timeseries),
-        "video_annotated_mp4": video_boxes_mp4,
-        "video_lidar_mp4":     video_lidar_mp4,
-        "video_bev_mp4":       video_bev_mp4,
+        "video_annotated_mp4": video_annotated,
+        "video_lidar_mp4":     video_lidar,
+        "video_bev_mp4":       video_bev,
     }

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, useCallback } from 'react'
 import useAppStore from '../../store/appStore'
 import { runBulkInference } from '../../api/inferApi'
 import BulkResultsGallery from '../bulk/BulkResultsGallery'
@@ -11,6 +11,7 @@ function VideoBlock({ label, src }) {
       <video
         className="w-full rounded border border-white/[0.08] bg-black"
         controls
+        loop
         src={`data:video/mp4;base64,${src}`}
       />
     </div>
@@ -36,6 +37,7 @@ export default function BulkUploadPanel() {
   const inputRef = useRef()
   const [zipFile, setZipFile] = useState(null)
   const [dragging, setDragging] = useState(false)
+  const [progress, setProgress] = useState({ current: 0, total: 0, frameId: null, encoding: false })
 
   const processing = bulkStatus === 'processing'
 
@@ -46,11 +48,22 @@ export default function BulkUploadPanel() {
     if (f && f.name.endsWith('.zip')) setZipFile(f)
   }
 
+  const onProgress = useCallback((evt) => {
+    if (evt.type === 'start') {
+      setProgress({ current: 0, total: evt.total, frameId: null, encoding: false })
+    } else if (evt.type === 'progress') {
+      setProgress(p => ({ ...p, current: evt.current, total: evt.total, frameId: evt.frame_id, encoding: false }))
+    } else if (evt.type === 'encoding') {
+      setProgress(p => ({ ...p, encoding: true, frameId: null }))
+    }
+  }, [])
+
   async function run() {
     if (!zipFile || processing) return
     setBulkStatus('processing')
+    setProgress({ current: 0, total: 0, frameId: null, encoding: false })
     try {
-      const data = await runBulkInference(zipFile, bulkIsTimeSeries)
+      const data = await runBulkInference(zipFile, bulkIsTimeSeries, onProgress)
       setBulkIsTimeSeries(bulkIsTimeSeries)
       setBulkFrames(data.frames)
       setBulkVideos(
@@ -151,6 +164,38 @@ export default function BulkUploadPanel() {
           </span>
         ) : 'Process Dataset'}
       </button>
+
+      {processing && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex justify-between text-[9px] text-[#555]">
+            {progress.encoding ? (
+              <span className="text-[#ffab00]">Encoding video…</span>
+            ) : progress.total > 0 ? (
+              <>
+                <span>
+                  Frame <span className="text-[#f0f0f0]">{progress.current}</span> / {progress.total}
+                  {progress.frameId && <span className="text-[#555]"> · {progress.frameId}</span>}
+                </span>
+                <span className="text-[#f0f0f0]">
+                  {Math.round((progress.current / progress.total) * 100)}%
+                </span>
+              </>
+            ) : (
+              <span>Initialising…</span>
+            )}
+          </div>
+          <div className="w-full h-1 rounded-full bg-white/[0.06] overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                progress.encoding ? 'bg-[#ffab00] animate-pulse w-full' : 'bg-[#00e676]'
+              }`}
+              style={!progress.encoding ? {
+                width: progress.total > 0 ? `${(progress.current / progress.total) * 100}%` : '0%'
+              } : undefined}
+            />
+          </div>
+        </div>
+      )}
 
       {bulkError && (
         <p className="text-[10px] text-[#ff3d71] bg-[#ff3d71]/10 border border-[#ff3d71]/20 rounded px-2 py-1.5">

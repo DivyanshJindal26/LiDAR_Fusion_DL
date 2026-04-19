@@ -9,8 +9,14 @@ import uuid
 import zipfile
 
 import numpy as np
+import asyncio
+import json
+import queue
+import threading
+
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from chat_router import router as chat_router
@@ -22,7 +28,7 @@ from modules.chroma_store import store_scene, query_scenes
 from modules.synthetic import generate_synthetic_scene
 from modules.label_parser import parse_label_file
 from modules.metrics import match_and_evaluate
-from modules.bulk import process_zip
+from modules.bulk import stream_process_zip
 
 app = FastAPI(title="LiDAR Fusion API v2", version="2.0.0")
 
@@ -210,21 +216,48 @@ async def infer_bulk(
     if not zipfile.is_zipfile(io.BytesIO(zip_bytes)):
         raise HTTPException(status_code=400, detail="Not a valid ZIP archive.")
 
-    result = process_zip(zip_bytes, is_timeseries=is_timeseries)
+    q: queue.Queue = queue.Queue()
 
-    # Store each bulk frame in ChromaDB
-    for frame in result.get("frames", []):
-        fid  = frame.get("frame_id", f"bulk_{uuid.uuid4().hex[:6]}")
-        dets = frame.get("detections", [])
-        npts = frame.get("num_points", 0)
-        store_scene(fid, dets, npts)
+    def worker():
+        try:
+            for event in stream_process_zip(zip_bytes, is_timeseries=is_timeseries):
+                q.put(event)
+                if event.get("type") == "done":
+                    # store scenes in ChromaDB
+                    for frame in event.get("frames", []):
+                        fid  = frame.get("frame_id", f"bulk_{uuid.uuid4().hex[:6]}")
+                        dets = frame.get("detections", [])
+                        npts = frame.get("num_points", 0)
+                        try:
+                            store_scene(fid, dets, npts)
+                        except Exception:
+                            pass
+                    frames = event.get("frames", [])
+                    if frames:
+                        global _LAST_SCENE_DETECTIONS
+                        _LAST_SCENE_DETECTIONS = frames[0].get("detections", [])
+        except Exception as exc:
+            q.put({"type": "error", "message": str(exc)})
+        finally:
+            q.put(None)
 
-    frames = result.get("frames", [])
-    if frames:
-        global _LAST_SCENE_DETECTIONS
-        _LAST_SCENE_DETECTIONS = frames[0].get("detections", [])
+    threading.Thread(target=worker, daemon=True).start()
 
-    return result
+    async def generate():
+        loop = asyncio.get_event_loop()
+        while True:
+            event = await loop.run_in_executor(None, q.get)
+            if event is None:
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("type") in ("done", "error"):
+                break
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 # ── RAG query ─────────────────────────────────────────────────────────────────

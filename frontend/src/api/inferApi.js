@@ -25,13 +25,11 @@ export async function runSceneInference(sceneId) {
 }
 
 
-export async function runBulkInference(zipFile, isTimeSeries = true) {
+export async function runBulkInference(zipFile, isTimeSeries = true, onProgress = null) {
   const form = new FormData()
   form.append('zip_file', zipFile)
-  form.append('is_timeseries', String(isTimeSeries))
 
   const qs = new URLSearchParams({ is_timeseries: String(isTimeSeries) })
-
   const res = await fetch(`/api/infer-bulk?${qs.toString()}`, {
     method: 'POST',
     body: form,
@@ -40,5 +38,32 @@ export async function runBulkInference(zipFile, isTimeSeries = true) {
     const text = await res.text()
     throw new Error(`Bulk inference failed (${res.status}): ${text}`)
   }
-  return res.json()
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue
+      const event = JSON.parse(line.slice(6))
+      if (event.type === 'start' && onProgress) {
+        onProgress({ type: 'start', total: event.total })
+      } else if (event.type === 'progress' && onProgress) {
+        onProgress({ type: 'progress', current: event.current, total: event.total, frame_id: event.frame_id, error: event.error })
+      } else if (event.type === 'encoding' && onProgress) {
+        onProgress({ type: 'encoding' })
+      } else if (event.type === 'done') {
+        return event
+      } else if (event.type === 'error') {
+        throw new Error(event.message)
+      }
+    }
+  }
+  throw new Error('SSE stream ended without done event')
 }
