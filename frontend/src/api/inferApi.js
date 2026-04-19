@@ -48,6 +48,7 @@ export async function runBulkInference(zipFile, isTimeSeries = true, onProgress 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+  const frames = []
 
   while (true) {
     const { done, value } = await reader.read()
@@ -60,12 +61,13 @@ export async function runBulkInference(zipFile, isTimeSeries = true, onProgress 
       const event = JSON.parse(line.slice(6))
       if (event.type === 'start' && onProgress) {
         onProgress({ type: 'start', total: event.total })
-      } else if (event.type === 'progress' && onProgress) {
-        onProgress({ type: 'progress', current: event.current, total: event.total, frame_id: event.frame_id, error: event.error })
+      } else if (event.type === 'progress') {
+        if (event.frame) frames.push(event.frame)
+        if (onProgress) onProgress({ type: 'progress', current: event.current, total: event.total, frame_id: event.frame_id, error: event.error })
       } else if (event.type === 'encoding' && onProgress) {
         onProgress({ type: 'encoding' })
       } else if (event.type === 'done') {
-        return event
+        return { ...event, frames }
       } else if (event.type === 'error') {
         throw new Error(event.message)
       }

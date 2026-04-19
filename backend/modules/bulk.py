@@ -266,7 +266,10 @@ def stream_process_zip(zip_bytes: bytes, is_timeseries: bool = True):
                 result = _process_frame(bin_b, img_b, calib_dict)
                 result["frame_id"] = stem
                 frames.append(result)
-                yield {"type": "progress", "current": i + 1, "total": total_found, "frame_id": stem}
+                # Send full frame data in the progress event so the frontend
+                # accumulates it incrementally — avoids one giant done payload.
+                yield {"type": "progress", "current": i + 1, "total": total_found,
+                       "frame_id": stem, "frame": result}
             except Exception as exc:
                 errors.append(f"{stem}: {exc}")
                 yield {"type": "progress", "current": i + 1, "total": total_found,
@@ -280,9 +283,9 @@ def stream_process_zip(zip_bytes: bytes, is_timeseries: bool = True):
     video_lidar     = _build_video_from_base64_frames(frames, "lidar_image")  if is_timeseries else None
     video_bev       = _build_video_from_base64_frames(frames, "lidar_bev")    if is_timeseries else None
 
+    # done event carries only videos + summary — no frames (already streamed per-progress)
     yield {
         "type":                "done",
-        "frames":              frames,
         "total_found":         total_found,
         "processed":           len(frames),
         "skipped_errors":      errors,
