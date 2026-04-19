@@ -201,6 +201,24 @@ Processing streams progress via Server-Sent Events so the frontend can show fram
 
 ---
 
+## Scene memory and chatbot
+
+Every processed frame — whether from single upload, scene picker, or bulk ZIP — is stored in a ChromaDB vector collection after inference. The stored document is a plain text summary of that frame: detection count, class breakdown, closest and farthest object distances, per-object label and distance, and total LiDAR point count. ChromaDB embeds this text using its built-in sentence-transformers model.
+
+The collection persists across server restarts at `./chroma_db`. The header shows a live count of how many scenes are in memory; it briefly flashes green labelled "stored" for 1.8 seconds each time a new frame is added.
+
+The chatbot (`POST /chat`) is a full agentic loop that runs server-side via OpenRouter. The API key never reaches the browser. When you send a message, the frontend builds a system prompt that includes the full context of whatever is currently loaded — then sends that prompt plus the conversation history to the LLM. The LLM can call tools (like querying detections, filtering by distance, counting objects by class) and the loop continues until it produces a plain text final answer, which is streamed back. The tool-use intermediate steps are hidden; you only see the final response.
+
+What the system prompt contains depends on mode:
+
+- **Single frame**: all pipeline stats (YOLO count, PP raw, T1 fused, T2 gated, T3 OBB, final), every detection with label, score, confidence tier, distance, 3D center, and fusion source.
+- **Bulk time-series**: a global summary across all frames (class counts, avg/min/max distance per class), a compact one-line entry per frame (frame ID, detection count, class histogram, avg distance), and full detail for whichever frame is selected on the timeline scrubber. Capped at 200 frames for token budget.
+- **Bulk independent**: only the currently-viewed frame, same detail as single-frame mode.
+
+The model is configurable via `OPENROUTER_MODEL` in `.env`. Default is `x-ai/grok-3-mini-beta`.
+
+---
+
 ## PointPillars fallback
 
 If PointPillars is not loaded (env vars not configured, checkpoint missing, or a CUDA error), `run_pointpillars()` returns an empty list. The pipeline then skips Tier 1 and Tier 2 entirely and runs Tier 3 on all YOLO boxes. Results are lower quality (no true 3D box regression, only DBSCAN+OBB estimates) but the pipeline stays functional. This is the mode that runs without a GPU.
