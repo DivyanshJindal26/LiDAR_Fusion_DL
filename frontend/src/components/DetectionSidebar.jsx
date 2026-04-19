@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import useAppStore from '../store/appStore'
-import { ragQuery } from '../api/inferApi'
 
 const CLASS_COLORS = {
   car:        '#2979ff',
@@ -26,7 +25,6 @@ export default function DetectionSidebar() {
   const {
     result, confidenceThreshold, setConfidenceThreshold,
     selectedObjects, toggleSelectedObject, clearSelectedObjects,
-    ragQuery: ragQueryText, setRagQuery, ragLoading, setRagLoading, ragResult, setRagResult,
   } = useAppStore()
 
   const [collapsed, setCollapsed] = useState(false)
@@ -34,19 +32,6 @@ export default function DetectionSidebar() {
   const dets = (result?.detections || []).filter(
     (d) => (d.score ?? 1) >= confidenceThreshold
   )
-
-  const handleRag = async () => {
-    if (!ragQueryText.trim() || ragLoading) return
-    setRagLoading(true)
-    try {
-      const res = await ragQuery(ragQueryText)
-      setRagResult(res)
-    } catch (e) {
-      setRagResult({ answer: `Error: ${e.message}`, matches: [] })
-    } finally {
-      setRagLoading(false)
-    }
-  }
 
   if (collapsed) {
     return (
@@ -159,32 +144,6 @@ export default function DetectionSidebar() {
         </div>
       )}
 
-      {/* RAG query */}
-      <div className="border-t border-white/[0.06] p-3 flex flex-col gap-2">
-        <div className="text-[9px] uppercase tracking-widest text-[#555]">Scene search (RAG)</div>
-        <div className="flex gap-1.5">
-          <input
-            type="text"
-            value={ragQueryText}
-            onChange={(e) => setRagQuery(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleRag()}
-            placeholder="find pedestrians near..."
-            className="flex-1 min-w-0 text-xs bg-[#111] border border-white/[0.06] rounded px-2 py-1.5 text-[#f0f0f0] placeholder-[#333] outline-none focus:border-[#00e676]/40"
-          />
-          <button
-            onClick={handleRag}
-            disabled={ragLoading}
-            className="text-xs px-2 py-1.5 rounded border border-[#00e676]/30 text-[#00e676] bg-[#00e676]/10 hover:bg-[#00e676]/20 disabled:opacity-40 transition-colors"
-          >
-            {ragLoading ? '…' : 'Go'}
-          </button>
-        </div>
-        {ragResult && (
-          <div className="text-[10px] text-[#f0f0f0] bg-[#111] border border-white/[0.06] rounded p-2 max-h-32 overflow-y-auto leading-relaxed">
-            {ragResult.answer}
-          </div>
-        )}
-      </div>
     </div>
   )
 }

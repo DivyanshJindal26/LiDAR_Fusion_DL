@@ -44,14 +44,6 @@ const useAppStore = create((set, get) => ({
     }),
   clearSelectedObjects: () => set({ selectedObjects: [] }),
 
-  // ── RAG query ─────────────────────────────────────────────────────────────
-  ragQuery: '',
-  ragLoading: false,
-  ragResult: null,
-  setRagQuery: (q) => set({ ragQuery: q }),
-  setRagLoading: (v) => set({ ragLoading: v }),
-  setRagResult: (r) => set({ ragResult: r }),
-
   // ── Confidence filter ─────────────────────────────────────────────────────
   confidenceThreshold: 0.3,
   setConfidenceThreshold: (t) => set({ confidenceThreshold: t }),

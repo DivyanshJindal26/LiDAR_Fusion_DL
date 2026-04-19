@@ -238,14 +238,9 @@ export function useChatbot() {
       try {
         let response = await sendChat({ messages: history, sceneContext })
 
-        // Agentic tool-use loop
+        // Agentic tool-use loop — keep the spinner showing the whole time
         while (response.tool_calls?.length > 0) {
           const call = response.tool_calls[0]
-          updateLastChatMessage({
-            toolCall: { name: call.name, input: call.input, status: 'running' },
-            content: '',
-            loading: false,
-          })
 
           let toolResult
           try {
@@ -255,10 +250,6 @@ export function useChatbot() {
           } catch (err) {
             toolResult = { error: err.message }
           }
-
-          updateLastChatMessage({
-            toolCall: { name: call.name, input: call.input, status: 'done', result: toolResult },
-          })
 
           history.push({ role: 'assistant', content: response.content ?? '', tool_calls: response.tool_calls })
           history.push({ role: 'tool', tool_call_id: call.id, content: JSON.stringify(toolResult) })
@@ -272,7 +263,7 @@ export function useChatbot() {
           : (result?.detections ?? [])
 
         const finalText = enforceSceneConsistency(response.content ?? '', currentDets)
-        updateLastChatMessage({ content: finalText, loading: false, toolCall: undefined })
+        updateLastChatMessage({ content: finalText, loading: false })
         history.push({ role: 'assistant', content: finalText })
         setConversationHistory(history)
       } catch (err) {
