@@ -1,16 +1,38 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import useAppStore from '../../store/appStore'
 import { getScenes } from '../../api/scenesApi'
+import { getChromaStats } from '../../api/inferApi'
 
 export default function Header() {
   const {
     result, scenes, selectedScene, setScenes, setSelectedScene,
     chatOpen, setChatOpen,
+    chromaCount, setChromaCount,
   } = useAppStore()
+
+  const [flash, setFlash] = useState(false)
 
   useEffect(() => {
     getScenes().then(setScenes).catch(() => {})
   }, [setScenes])
+
+  useEffect(() => {
+    if (!result) return
+    getChromaStats()
+      .then(({ count }) => {
+        if (count > chromaCount) {
+          setChromaCount(count)
+          setFlash(true)
+          setTimeout(() => setFlash(false), 1800)
+        }
+      })
+      .catch(() => {})
+  }, [result])
+
+  // fetch on mount so the count is populated before any inference
+  useEffect(() => {
+    getChromaStats().then(({ count }) => setChromaCount(count)).catch(() => {})
+  }, [])
 
   const dets  = result?.detections?.length ?? null
   const ms    = result?.inference_time_ms ?? null
@@ -36,6 +58,17 @@ export default function Header() {
         {ms !== null && (
           <span className="text-[10px] text-[#555]">{ms} ms</span>
         )}
+
+        <span
+          className={`text-[10px] border rounded px-2 py-0.5 transition-colors duration-500 ${
+            flash
+              ? 'text-[#00e676] border-[#00e676]/40 bg-[#00e676]/10'
+              : 'text-[#444] border-white/[0.04]'
+          }`}
+          title="Scenes stored in ChromaDB vector store"
+        >
+          {flash ? 'stored' : `${chromaCount} in memory`}
+        </span>
 
         {scenes.length > 0 && (
           <select

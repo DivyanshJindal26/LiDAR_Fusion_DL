@@ -1,3 +1,9 @@
+export async function getChromaStats() {
+  const res = await fetch('/api/chroma-stats')
+  if (!res.ok) return { count: 0 }
+  return res.json()
+}
+
 export async function runInference({ bin, image, calib, label }) {
   const form = new FormData()
   form.append('bin_file', bin)

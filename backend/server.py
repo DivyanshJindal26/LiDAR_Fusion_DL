@@ -260,6 +260,16 @@ async def infer_bulk(
     )
 
 
+# ── ChromaDB stats ────────────────────────────────────────────────────────────
+
+@app.get("/chroma-stats")
+async def chroma_stats():
+    from modules.chroma_store import _get_collection
+    col = _get_collection()
+    count = col.count() if col is not None else 0
+    return {"count": count}
+
+
 # ── RAG query ─────────────────────────────────────────────────────────────────
 
 class RagRequest(BaseModel):

@@ -67,6 +67,10 @@ const useAppStore = create((set, get) => ({
   setBulkVideos: (annotatedVideo, lidarVideo, bevVideo) =>
     set({ bulkAnnotatedVideo: annotatedVideo, bulkLidarVideo: lidarVideo, bulkBevVideo: bevVideo }),
 
+  // ── ChromaDB ───────────────────────────────────────────────────────────────
+  chromaCount: 0,
+  setChromaCount: (n) => set({ chromaCount: n }),
+
   // ── Chat ───────────────────────────────────────────────────────────────────
   chatOpen: false,
   chatMessages: [],
