@@ -9,6 +9,17 @@ function buildSystemPrompt(result) {
     return 'You are a LiDAR + Camera Fusion perception assistant. No scene has been loaded yet. Ask the user to upload a scene first.'
   }
   const detections = result.detections || []
+  const classCounts = detections.reduce((acc, d) => {
+    const cls = String(d.label ?? d.class ?? 'unknown').toLowerCase()
+    acc[cls] = (acc[cls] || 0) + 1
+    return acc
+  }, {})
+
+  const classCountLines = Object.entries(classCounts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cls, count]) => `- ${cls}: ${count}`)
+    .join('\n')
+
   const summary = detections
     .map(
       (d) => {
@@ -27,10 +38,38 @@ function buildSystemPrompt(result) {
 
   return `You are a LiDAR + Camera Fusion perception assistant analyzing a KITTI autonomous driving scene.
 
+OPERATING RULES (STRICT):
+1. Use only provided scene data and tool outputs. Do not invent objects or counts.
+2. If uncertain about presence, counts, or filters, call query_scene before answering.
+3. Never say "no cars" (or similar) unless the data or tool results explicitly confirm zero.
+4. If detections are empty, state that clearly and suggest rerunning inference/upload.
+5. Keep responses concise, numeric, and evidence-based.
+6. When giving counts, include the source (loaded detections vs query result).
+
+SCHEMA NOTES:
+- Preferred detection keys: label, score, distance_m, center, bbox_2d.
+- Legacy fallback keys may appear: class, confidence, xyz.
+- Distances are in meters.
+
+TOOL USAGE POLICY:
+- Tool name: query_scene.
+- Use it for semantic lookups, filtered questions, and verification.
+- For count questions (for example "how many cars"), call query_scene first if there is any ambiguity.
+
+CLASS NORMALIZATION GUIDE:
+- car, cars, vehicle, vehicles, auto -> car
+- pedestrian, person, people, human -> pedestrian
+- cyclist, bicycle, bike, bikes -> cyclist
+- truck, trucks -> truck
+- van, vans -> van
+
 Scene stats: ${result.num_points?.toLocaleString() ?? '?'} LiDAR points processed in ${result.inference_time_ms ?? '?'}ms.
 
 Detected objects (${detections.length} total):
 ${summary || '(none)'}
+
+Class counts from loaded detections:
+${classCountLines || '(none)'}
 
 Use the query_scene tool to search for specific objects or answer semantic questions about the scene. Be concise and reference actual numbers from the data. When mentioning distances, be precise.`
 }
